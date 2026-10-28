@@ -2,19 +2,17 @@ package me.kavishdevar.librepods.privileged
 
 import android.annotation.SuppressLint
 import android.app.ActivityThread
-import android.bluetooth.BluetoothHeadset
 import android.bluetooth.BluetoothManager
-import android.bluetooth.BluetoothProfile
 import android.content.Context
+import android.net.LocalServerSocket
 import android.os.Looper
 import android.util.Log
-import kotlin.system.exitProcess
 
 object Main {
     @SuppressLint("MissingPermission")
     @JvmStatic
     fun main(args: Array<String>) {
-        Log.i("LibrePodsPrivileged", "Starting")
+        Log.i("LibrePodsPrivileged", "Starting LibrePods Privileged Service daemon")
 
         @Suppress("DEPRECATION")
         Looper.prepareMainLooper()
@@ -22,64 +20,34 @@ object Main {
         ActivityThread.initializeMainlineModules()
 
         val context = ActivityThread.systemMain().systemContext as Context
-
         val adapter = context.getSystemService(BluetoothManager::class.java).adapter
 
         check(adapter != null) { "Bluetooth adapter unavailable" }
         check(adapter.isEnabled) { "Bluetooth adapter not enabled" }
 
-        Log.i(
-            "LibrePodsPrivileged",
-            "Getting remote device"
-        )
+        val service = PrivilegedServiceImpl(context, adapter)
+        Log.i("LibrePodsPrivileged", "Privileged service initialized with UID ${service.serviceUid}")
 
-        val device = adapter.getRemoteDevice("30:7A:D2:42:77:40")
+        try {
+            val serverSocket = LocalServerSocket("me.kavishdevar.librepods.privileged")
+            Log.i("LibrePodsPrivileged", "Listening on LocalServerSocket 'me.kavishdevar.librepods.privileged'")
 
-        Log.i(
-            "LibrePodsPrivileged",
-            "Got remote device: ${device.name} (${device.address})"
-        )
-
-
-        val started = adapter.getProfileProxy(
-            context,
-            object : BluetoothProfile.ServiceListener {
-                override fun onServiceConnected(
-                    profile: Int,
-                    proxy: BluetoothProfile
-                ) {
-                    if (profile != BluetoothProfile.HEADSET) return
-
-                    val headset = proxy as BluetoothHeadset
-
+            Thread {
+                while (true) {
                     try {
-                        val success = headset.setConnectionPolicy(
-                            device,
-                            BluetoothProfile.CONNECTION_POLICY_FORBIDDEN
-                        )
-
-                        Log.i(
-                            "LibrePodsPrivileged",
-                            "Set HFP forbidden: success=$success"
-                        )
+                        val socket = serverSocket.accept()
+                        Log.i("LibrePodsPrivileged", "Accepted client connection")
                     } catch (e: Exception) {
-                        Log.e("LibrePodsPrivileged", "Failed to disable HFP", e)
-                    } finally {
-                        adapter.closeProfileProxy(profile, proxy)
-                        exitProcess(0)
+                        Log.e("LibrePodsPrivileged", "Socket accept error", e)
+                        break
                     }
                 }
+            }.start()
+        } catch (e: Exception) {
+            Log.w("LibrePodsPrivileged", "Could not bind local socket: " + str(e))
+        }
 
-                override fun onServiceDisconnected(profile: Int) {
-                    Log.w("LibrePodsPrivileged", "Profile disconnected: $profile")
-                }
-            },
-            BluetoothProfile.HEADSET
-        )
-
-        check(started) { "getProfileProxy() rejected the request" }
-
-        Log.i("LibrePodsPrivileged", "Waiting for HFP proxy")
+        Log.i("LibrePodsPrivileged", "Privileged service daemon running in event loop")
         Looper.loop()
     }
 }

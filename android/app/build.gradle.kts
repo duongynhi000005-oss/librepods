@@ -131,6 +131,7 @@ android {
         compose = true
         viewBinding = true
         buildConfig = true
+        aidl = true
     }
     androidResources {
         generateLocaleConfig = true
