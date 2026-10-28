@@ -50,6 +50,7 @@ import me.kavishdevar.librepods.R
 import me.kavishdevar.librepods.audio.EldDecoder
 import me.kavishdevar.librepods.core.bluetooth.BluetoothMetadata
 import me.kavishdevar.librepods.utils.PrivilegedServiceHolder
+import me.kavishdevar.librepods.utils.XposedServiceHolder
 import me.kavishdevar.librepods.audio.WavWriter
 import me.kavishdevar.librepods.core.bluetooth.MacAddress
 import me.kavishdevar.librepods.core.bluetooth.aacp.types.ControlCommandIdentifier
@@ -719,53 +720,57 @@ class LibrePodsService: Service() {
 
                         updateDeviceNotification(device = device)
 
-                        // Update Bluetooth metadata via PrivilegedServiceHolder (standalone shell daemon / Shizuku fallback)
-                        Log.d(TAG, "updating bluetooth metadata via privileged service")
-                        val mac = device.macAddress.value
-                        state.battery.find { it.component == BatteryComponent.CASE }?.level?.let { lvl ->
-                            setBluetoothMetadata(
-                                mac,
-                                BluetoothMetadata.METADATA_UNTETHERED_CASE_BATTERY,
-                                lvl.toString().toByteArray()
-                            )
-                        }
-                        state.battery.find { it.component == BatteryComponent.CASE }?.status?.let { st ->
-                            val charging = if (st == BatteryStatus.CHARGING || st == BatteryStatus.OPTIMIZED_CHARGING) "1" else "0"
-                            setBluetoothMetadata(
-                                mac,
-                                BluetoothMetadata.METADATA_UNTETHERED_CASE_CHARGING,
-                                charging.toByteArray()
-                            )
-                        }
-                        state.battery.find { it.component == BatteryComponent.LEFT }?.level?.let { lvl ->
-                            setBluetoothMetadata(
-                                mac,
-                                BluetoothMetadata.METADATA_UNTETHERED_LEFT_BATTERY,
-                                lvl.toString().toByteArray()
-                            )
-                        }
-                        state.battery.find { it.component == BatteryComponent.LEFT }?.status?.let { st ->
-                            val charging = if (st == BatteryStatus.CHARGING || st == BatteryStatus.OPTIMIZED_CHARGING) "1" else "0"
-                            setBluetoothMetadata(
-                                mac,
-                                BluetoothMetadata.METADATA_UNTETHERED_LEFT_CHARGING,
-                                charging.toByteArray()
-                            )
-                        }
-                        state.battery.find { it.component == BatteryComponent.RIGHT }?.level?.let { lvl ->
-                            setBluetoothMetadata(
-                                mac,
-                                BluetoothMetadata.METADATA_UNTETHERED_RIGHT_BATTERY,
-                                lvl.toString().toByteArray()
-                            )
-                        }
-                        state.battery.find { it.component == BatteryComponent.RIGHT }?.status?.let { st ->
-                            val charging = if (st == BatteryStatus.CHARGING || st == BatteryStatus.OPTIMIZED_CHARGING) "1" else "0"
-                            setBluetoothMetadata(
-                                mac,
-                                BluetoothMetadata.METADATA_UNTETHERED_RIGHT_CHARGING,
-                                charging.toByteArray()
-                            )
+                        // Update Bluetooth metadata via PrivilegedServiceHolder fallback when Xposed module is not active
+                        if (XposedServiceHolder.service == null) {
+                            Log.d(TAG, "updating bluetooth metadata via privileged service fallback (Xposed inactive)")
+                            val mac = device.macAddress.value
+                            state.battery.find { it.component == BatteryComponent.CASE }?.level?.let { lvl ->
+                                setBluetoothMetadata(
+                                    mac,
+                                    BluetoothMetadata.METADATA_UNTETHERED_CASE_BATTERY,
+                                    lvl.toString().toByteArray()
+                                )
+                            }
+                            state.battery.find { it.component == BatteryComponent.CASE }?.status?.let { st ->
+                                val charging = if (st == BatteryStatus.CHARGING || st == BatteryStatus.OPTIMIZED_CHARGING) "1" else "0"
+                                setBluetoothMetadata(
+                                    mac,
+                                    BluetoothMetadata.METADATA_UNTETHERED_CASE_CHARGING,
+                                    charging.toByteArray()
+                                )
+                            }
+                            state.battery.find { it.component == BatteryComponent.LEFT }?.level?.let { lvl ->
+                                setBluetoothMetadata(
+                                    mac,
+                                    BluetoothMetadata.METADATA_UNTETHERED_LEFT_BATTERY,
+                                    lvl.toString().toByteArray()
+                                )
+                            }
+                            state.battery.find { it.component == BatteryComponent.LEFT }?.status?.let { st ->
+                                val charging = if (st == BatteryStatus.CHARGING || st == BatteryStatus.OPTIMIZED_CHARGING) "1" else "0"
+                                setBluetoothMetadata(
+                                    mac,
+                                    BluetoothMetadata.METADATA_UNTETHERED_LEFT_CHARGING,
+                                    charging.toByteArray()
+                                )
+                            }
+                            state.battery.find { it.component == BatteryComponent.RIGHT }?.level?.let { lvl ->
+                                setBluetoothMetadata(
+                                    mac,
+                                    BluetoothMetadata.METADATA_UNTETHERED_RIGHT_BATTERY,
+                                    lvl.toString().toByteArray()
+                                )
+                            }
+                            state.battery.find { it.component == BatteryComponent.RIGHT }?.status?.let { st ->
+                                val charging = if (st == BatteryStatus.CHARGING || st == BatteryStatus.OPTIMIZED_CHARGING) "1" else "0"
+                                setBluetoothMetadata(
+                                    mac,
+                                    BluetoothMetadata.METADATA_UNTETHERED_RIGHT_CHARGING,
+                                    charging.toByteArray()
+                                )
+                            }
+                        } else {
+                            Log.d(TAG, "Xposed module active; skipping privileged metadata update")
                         }
                     }
 
@@ -1449,6 +1454,10 @@ class LibrePodsService: Service() {
     private fun setAppleBluetoothMetadata(
         device: AppleDevice
     ) {
+        if (XposedServiceHolder.service != null) {
+            Log.d(TAG, "Xposed module active; skipping privileged metadata setup for apple device")
+            return
+        }
         val macAddress = device.macAddress.value
         val metadata = device.metadata.value
         val spec = AirPodsSpecs.getSpec(metadata.model)
@@ -1512,6 +1521,9 @@ class LibrePodsService: Service() {
     }
 
     private fun setBluetoothMetadata(macAddress: String, key: Int, value: ByteArray): Boolean {
+        if (XposedServiceHolder.service != null) {
+            return false
+        }
         return try {
             PrivilegedServiceHolder.service?.setBluetoothMetadata(macAddress, key, value) ?: false
         } catch (e: Exception) {
@@ -1521,6 +1533,9 @@ class LibrePodsService: Service() {
     }
 
     private fun setConnectionPolicy(macAddress: String, profile: Int, policy: Int): Boolean {
+        if (XposedServiceHolder.service != null) {
+            return false
+        }
         return try {
             PrivilegedServiceHolder.service?.setConnectionPolicy(macAddress, profile, policy) ?: false
         } catch (e: Exception) {
