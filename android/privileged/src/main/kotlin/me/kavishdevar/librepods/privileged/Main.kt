@@ -44,7 +44,7 @@ object Main {
                 }
             }.start()
         } catch (e: Exception) {
-            Log.w("LibrePodsPrivileged", "Could not bind local socket: " + str(e))
+            Log.w("LibrePodsPrivileged", "Could not bind local socket", e)
         }
 
         Log.i("LibrePodsPrivileged", "Privileged service daemon running in event loop")
